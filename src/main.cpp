@@ -3,12 +3,12 @@
 
 #define TRIMMER_PIN A0
 
-char mode;
-bool hasMode = false;
+char program;
+bool hasProgram = false;
 
 void setupA()
 {
-  Serial.println("Running A");
+  //  ...
 }
 
 void loopA()
@@ -24,8 +24,8 @@ void loopA()
 
 // -----------------
 
-#define MOTOR_A 4
-#define MOTOR_B 5
+#define MOTOR_A 5
+#define MOTOR_B 6
 
 void setupB()
 {
@@ -34,34 +34,59 @@ void setupB()
   Serial.println("Press F for FORWARD, B for BACKWARDS or H for HALT");
 }
 
+char motorMode = 'H';
+
 void loopB()
 {
-  if (Serial.available()) {
+  if (Serial.available())
+  {
     char c = Serial.read();
     c = toupper(c);
-    switch (c)
+    if (c == 'F' || c == 'B' || c == 'H')
     {
-    case 'F':
-      digitalWrite(MOTOR_A, HIGH);
-      digitalWrite(MOTOR_B, LOW);
-      Serial.println("FORWARDS");
-      break;
+      motorMode = c;
+      switch (motorMode)
+      {
+      case 'F':
+        Serial.println("FORWARDS");
+        break;
 
-    case 'B':
-      digitalWrite(MOTOR_A, LOW);
-      digitalWrite(MOTOR_B, HIGH);
-      Serial.println("BACKWARDS");
-      break;
+      case 'B':
+        Serial.println("BACKWARDS");
+        break;
 
-    case 'H':
-      digitalWrite(MOTOR_A, LOW);
-      digitalWrite(MOTOR_B, LOW);
-      Serial.println("HALT");
-      break;
-    
-    default:
-      break;
+      case 'H':
+        Serial.println("HALT");
+        break;
+
+      default:
+        break;
+      }
     }
+  }
+
+  switch (motorMode)
+  {
+  case 'F':
+    digitalWrite(MOTOR_A, HIGH);
+    digitalWrite(MOTOR_B, LOW);
+    Serial.println("FORWARDS");
+    break;
+
+  case 'B':
+    digitalWrite(MOTOR_A, LOW);
+    digitalWrite(MOTOR_B, HIGH);
+    Serial.println("BACKWARDS");
+    break;
+
+  case 'H':
+    digitalWrite(MOTOR_A, LOW);
+    digitalWrite(MOTOR_B, LOW);
+    Serial.println("HALT");
+    break;
+
+  default:
+    break;
   }
 }
 
@@ -76,10 +101,8 @@ unsigned long lastTime = 0;
 int32_t lastPosition = 0;
 
 void setupC()
-{  
+{
   setupB();
-
-  pinMode(LED_BUILTIN, OUTPUT);
 }
 
 void loopC()
@@ -90,11 +113,12 @@ void loopC()
   unsigned long now = millis();
 
   unsigned long timeDiff = now - lastTime;
-  if (timeDiff >= 1000) {
+  if (timeDiff >= 1000)
+  {
     int32_t posDiff = position - lastPosition;
     float rotations = posDiff / (12.0 * 298.0);
     float minutes = timeDiff / 1000.0 / 60.0;
-    float speed = - rotations / minutes;
+    float speed = -rotations / minutes;
 
     lastPosition = position;
     lastTime = now;
@@ -108,12 +132,79 @@ void loopC()
 
 void setupD()
 {
-  Serial.println("Running D");
+  setupB();
 }
 
 void loopD()
 {
-  Serial.print("D");
+  // # Read trimmer value
+  int val = analogRead(TRIMMER_PIN);
+  int motorDutyCycle = val / 4; // Map max 1023 to max 255
+
+  // set motor speed to trimmer value
+  if (Serial.available())
+  {
+    char c = Serial.read();
+    c = toupper(c);
+    if (c == 'F' || c == 'B' || c == 'H')
+    {
+      motorMode = c;
+    }
+  }
+
+  switch (motorMode)
+  {
+  case 'F':
+    analogWrite(MOTOR_A, motorDutyCycle);
+    analogWrite(MOTOR_B, 0);
+    break;
+
+  case 'B':
+    analogWrite(MOTOR_A, 0);
+    analogWrite(MOTOR_B, motorDutyCycle);
+    break;
+
+  case 'H':
+    analogWrite(MOTOR_A, 0);
+    analogWrite(MOTOR_B, 0);
+    break;
+
+  default:
+    break;
+  }
+
+  // read rpm back in
+  int32_t position = encoder.read();
+  unsigned long now = millis();
+
+  unsigned long timeDiff = now - lastTime;
+  if (timeDiff >= 1000)
+  {
+    int32_t posDiff = position - lastPosition;
+    float rotations = posDiff / (12.0 * 298.0);
+    float minutes = timeDiff / 1000.0 / 60.0;
+    float speed = -rotations / minutes;
+
+    lastPosition = position;
+    lastTime = now;
+
+    Serial.print(val / 1023.0 * 100.0);
+    Serial.print("% -> ");
+
+    Serial.print(speed);
+    Serial.print("rpm [");
+    if (motorMode == 'H')
+    {
+      Serial.print("OFF]");
+    }
+    else
+    {
+      Serial.print(speed < 0 ? "C" : "");
+      Serial.print("CW]");
+    }
+
+    Serial.println();
+  }
 }
 
 // -----------------
@@ -138,9 +229,9 @@ void setup()
 
 void loop()
 {
-  if (hasMode)
+  if (hasProgram)
   {
-    switch (mode)
+    switch (program)
     {
     case 'A':
       loopA();
@@ -168,36 +259,36 @@ void loop()
     return;
   }
 
-  mode = toupper(Serial.read());
+  program = toupper(Serial.read());
 
-  if (mode == 'A')
+  if (program == 'A')
   {
     Serial.println("Progam A:");
     setupA();
-    hasMode = true;
+    hasProgram = true;
   }
-  else if (mode == 'B')
+  else if (program == 'B')
   {
     Serial.println("Progam B:");
     setupB();
-    hasMode = true;
+    hasProgram = true;
   }
-  else if (mode == 'C')
+  else if (program == 'C')
   {
     Serial.println("Progam C:");
     setupC();
-    hasMode = true;
+    hasProgram = true;
   }
-  else if (mode == 'D')
+  else if (program == 'D')
   {
     Serial.println("Progam D:");
     setupD();
-    hasMode = true;
+    hasProgram = true;
   }
-  else if (mode == 'E')
+  else if (program == 'E')
   {
     Serial.println("Progam E:");
     setupE();
-    hasMode = true;
+    hasProgram = true;
   }
 }
