@@ -92,8 +92,9 @@ void loopC()
   unsigned long timeDiff = now - lastTime;
   if (timeDiff >= 1000) {
     int32_t posDiff = position - lastPosition;
-    int32_t rotations = posDiff / (12.0 * 50.0 * 4.5);
-    float speed = - rotations / (timeDiff / 1000.0 / 60.0);
+    float rotations = posDiff / (12.0 * 298.0);
+    float minutes = timeDiff / 1000.0 / 60.0;
+    float speed = - rotations / minutes;
 
     lastPosition = position;
     lastTime = now;
