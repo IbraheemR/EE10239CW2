@@ -3,8 +3,21 @@
 
 #define TRIMMER_PIN A0
 
+#define MOTOR_A 5
+#define MOTOR_B 6
+
+#define MOTOR_SENSE_A 2
+#define MOTOR_SENSE_B 3
+
 char program;
 bool hasProgram = false;
+
+Encoder encoder(MOTOR_SENSE_A, MOTOR_SENSE_B);
+
+unsigned long lastTime = 0;
+int32_t lastPosition = 0;
+
+int motorDutyCycle = 0;
 
 void setupA()
 {
@@ -23,9 +36,6 @@ void loopA()
 }
 
 // -----------------
-
-#define MOTOR_A 5
-#define MOTOR_B 6
 
 void setupB()
 {
@@ -92,14 +102,6 @@ void loopB()
 
 // -----------------
 
-#define MOTOR_SENSE_A 2
-#define MOTOR_SENSE_B 3
-
-Encoder encoder(MOTOR_SENSE_A, MOTOR_SENSE_B);
-
-unsigned long lastTime = 0;
-int32_t lastPosition = 0;
-
 void setupC()
 {
   setupB();
@@ -139,7 +141,7 @@ void loopD()
 {
   // # Read trimmer value
   int val = analogRead(TRIMMER_PIN);
-  int motorDutyCycle = val / 4; // Map max 1023 to max 255
+  motorDutyCycle = val / 4; // Map max 1023 to max 255
 
   // set motor speed to trimmer value
   if (Serial.available())
@@ -211,19 +213,164 @@ void loopD()
 
 void setupE()
 {
-  Serial.println("Running E");
+  // The motor is taken to be in the 0deg position on startup.
+  Serial.println("Servo mode active.");
+
+  pinMode(MOTOR_A, OUTPUT);
+  pinMode(MOTOR_B, OUTPUT);
+}
+
+#define COUNTS_PER_DEGREE 12.0 * 298.0 / 360.0
+// Ramp the motor voltage in region ±30 deg around setpoint
+#define RAMP_REGION 30
+#define DEAD_REGION 1
+
+#define RAMP_COUNTS RAMP_REGION *COUNTS_PER_DEGREE
+#define DEAD_COUNTS DEAD_REGION *COUNTS_PER_DEGREE
+
+void controlStrategy(float setpointCounts)
+{
+  int32_t position = encoder.read();
+
+  int diff = position - setpointCounts;
+
+  float rampedDiff = 0;
+
+  if (diff > DEAD_REGION || diff < -DEAD_REGION)
+  {
+    if (diff > RAMP_REGION)
+    {
+      rampedDiff = 255;
+    }
+    else if (diff < -RAMP_REGION)
+    {
+      rampedDiff = -255;
+    }
+    else
+    {
+      rampedDiff = diff / RAMP_REGION * 255;
+    }
+  }
+
+  int dutyCycle = rampedDiff;
+
+  analogWrite(MOTOR_A, max(-dutyCycle, 0));
+  analogWrite(MOTOR_B, max(dutyCycle, 0));
 }
 
 void loopE()
 {
-  Serial.print("E");
+  // Determine the setpoint from the trimmer.
+  int val = analogRead(TRIMMER_PIN);
+  float setpointDegs = (val - 512) / 512.0 * 180;          // rescale into -180 to 180 degree range
+  float setpointCounts = setpointDegs * COUNTS_PER_DEGREE; // Convert degrees into counts
+
+  controlStrategy(setpointCounts);
+}
+
+// ---------------------------------
+
+bool rampUp = true;
+
+void setupSpeedTest()
+{
+  pinMode(MOTOR_A, OUTPUT);
+  pinMode(MOTOR_B, OUTPUT);
+
+  analogWrite(MOTOR_A, 0);
+  analogWrite(MOTOR_B, 0);
+}
+
+void loopSpeedTest()
+{
+  int32_t position = encoder.read();
+  unsigned long now = millis();
+
+  Serial.print("t=");
+  Serial.print(now);
+  Serial.print(",duty=");
+  Serial.print(motorDutyCycle);
+  Serial.print(",pos=");
+  Serial.println(position);
+
+  if (now - lastTime > 1000)
+  {
+    motorDutyCycle += rampUp ? 1 : -1;
+    if (rampUp)
+    {
+      if (motorDutyCycle >= 255)
+      {
+        rampUp = false;
+      }
+    }
+    else
+    {
+      if (motorDutyCycle < 0)
+      {
+        Serial.println("DONE");
+        while (1)
+          ;
+      }
+    }
+
+    analogWrite(MOTOR_A, motorDutyCycle);
+    lastTime = now;
+  }
+}
+
+// ---------------------------------
+
+#define NUM_TRIALS 100
+#define TRIAL_TIME 2000
+#define SETPOINT_A 0
+#define SETPOINT_B 180
+
+#define SETPOINT_A_COUNTS SETPOINT_A *COUNTS_PER_DEGREE
+#define SETPOINT_B_COUNTS SETPOINT_B *COUNTS_PER_DEGREE
+
+float setpoint = SETPOINT_A_COUNTS;
+unsigned long testStartMillis;
+int numTests = 0;
+
+void setupServoStepTest()
+{
+  setupE();
+  testStartMillis = millis();
+}
+
+void loopServoStepTest(int totalTrials)
+{
+  long testTime = millis() - testStartMillis;
+
+  if (testTime > TRIAL_TIME) // Step 2s into each test
+  {
+    testStartMillis = millis();
+    setpoint = setpoint == SETPOINT_A_COUNTS ? SETPOINT_B_COUNTS : SETPOINT_A_COUNTS;
+    numTests++;
+  }
+
+  if (numTests > totalTrials * 2)
+  {
+    Serial.print("DONE.");
+    while (1)
+      ;
+  }
+
+  controlStrategy(setpoint);
+
+  Serial.print("t=");
+  Serial.print(millis());
+  Serial.print(",setpoint=");
+  Serial.print(setpoint);
+  Serial.print(",pos=");
+  Serial.println(encoder.read());
 }
 
 // ---------------------------------
 
 void setup()
 {
-  Serial.begin(9600);
+  Serial.begin(115200);
   Serial.println("Enter Program Code (ABCDE):");
 }
 
@@ -253,6 +400,18 @@ void loop()
       loopE();
       break;
 
+    case '1':
+      loopSpeedTest();
+      break;
+
+    case '2':
+      loopServoStepTest(1);
+      break;
+
+    case '3':
+      loopServoStepTest(NUM_TRIALS);
+      break;
+
     default:
       break;
     }
@@ -261,34 +420,50 @@ void loop()
 
   program = toupper(Serial.read());
 
-  if (program == 'A')
+  hasProgram = true;
+  switch (program)
   {
+  case 'A':
     Serial.println("Progam A:");
     setupA();
-    hasProgram = true;
-  }
-  else if (program == 'B')
-  {
+    break;
+
+  case 'B':
     Serial.println("Progam B:");
     setupB();
-    hasProgram = true;
-  }
-  else if (program == 'C')
-  {
+    break;
+
+  case 'C':
     Serial.println("Progam C:");
     setupC();
-    hasProgram = true;
-  }
-  else if (program == 'D')
-  {
+    break;
+
+  case 'D':
     Serial.println("Progam D:");
     setupD();
-    hasProgram = true;
-  }
-  else if (program == 'E')
-  {
+    break;
+
+  case 'E':
     Serial.println("Progam E:");
     setupE();
-    hasProgram = true;
+    break;
+
+  case '1':
+    Serial.println("Program: Speed Test Mode:");
+    setupSpeedTest();
+    break;
+
+  case '2':
+    Serial.println("Program: Servo Step Response Test:");
+    setupServoStepTest();
+    break;
+
+  case '3':
+    Serial.println("Program: Servo Step Response Test (" + String(NUM_TRIALS) + " Trials):");
+    setupServoStepTest();
+    break;
+
+  default:
+    hasProgram = false;
   }
 }
