@@ -6,7 +6,7 @@
 #define MOTOR_A 5
 #define MOTOR_B 6
 
-// Interrupts set on pins 2 & 3 have the highest frequency and thus accuracy 
+// Interrupts set on pins 2 & 3 have the highest frequency and thus accuracy
 #define ENCODER_A 2
 #define ENCODER_B 3
 
@@ -30,8 +30,8 @@ int motorDutyCycle = 0;
 #define RAMP_REGION 30
 #define DEAD_REGION 1
 
-#define RAMP_COUNTS RAMP_REGION * COUNTS_PER_DEGREE
-#define DEAD_COUNTS DEAD_REGION * COUNTS_PER_DEGREE
+#define RAMP_COUNTS RAMP_REGION *COUNTS_PER_DEGREE
+#define DEAD_COUNTS DEAD_REGION *COUNTS_PER_DEGREE
 
 // Config for secret test modes
 
@@ -40,13 +40,12 @@ int motorDutyCycle = 0;
 #define SETPOINT_A -180
 #define SETPOINT_B 180
 
-#define SETPOINT_A_COUNTS SETPOINT_A * COUNTS_PER_DEGREE
-#define SETPOINT_B_COUNTS SETPOINT_B * COUNTS_PER_DEGREE
+#define SETPOINT_A_COUNTS SETPOINT_A *COUNTS_PER_DEGREE
+#define SETPOINT_B_COUNTS SETPOINT_B *COUNTS_PER_DEGREE
 
 float setpoint = SETPOINT_A_COUNTS;
 unsigned long testStartMillis;
 int numTests = 0;
-
 
 //
 // Based on the users input, we delegate on one of these setup & loop methods.
@@ -62,11 +61,15 @@ void setupA()
 void loopA()
 {
   int val = analogRead(TRIMMER_PIN);
-  float voltage = val / 1023.0 * 5.0;
-  Serial.print(val / 1023.0 * 100.0);
+
+  float percentage = val / 1023.0 * 100.0; // Resale 0 to 1023 range to 0 to 100%
+  float voltage = val / 1023.0 * 5.0;      // Resale 0 to 1023 range to 0 to 5V
+
+  Serial.print(percentage);
   Serial.print("% = ");
   Serial.print(voltage);
   Serial.println("V");
+
   delay(100);
 }
 
@@ -79,37 +82,8 @@ void setupB()
   Serial.println("Press F for FORWARD, B for BACKWARDS or H for HALT");
 }
 
-char motorMode = 'H';
-
-void loopB()
+void setMotorState(char motorMode)
 {
-  if (Serial.available())
-  {
-    char c = Serial.read();
-    c = toupper(c);
-    if (c == 'F' || c == 'B' || c == 'H')
-    {
-      motorMode = c;
-      switch (motorMode)
-      {
-      case 'F':
-        Serial.println("FORWARDS");
-        break;
-
-      case 'B':
-        Serial.println("BACKWARDS");
-        break;
-
-      case 'H':
-        Serial.println("HALT");
-        break;
-
-      default:
-        break;
-      }
-    }
-  }
-
   switch (motorMode)
   {
   case 'F':
@@ -135,17 +109,52 @@ void loopB()
   }
 }
 
+char motorMode = 'H';
+
+void loopB()
+{
+  if (Serial.available())
+  {
+    char c = Serial.read();
+    c = toupper(c);
+    // Check if it's a valid mode
+    if (c == 'F' || c == 'B' || c == 'H')
+    {
+      motorMode = c;
+      // Print the selected mode
+      switch (motorMode)
+      {
+      case 'F':
+        Serial.println("FORWARDS");
+        break;
+
+      case 'B':
+        Serial.println("BACKWARDS");
+        break;
+
+      case 'H':
+        Serial.println("HALT");
+        break;
+
+      default:
+        break;
+      }
+    }
+  }
+
+  setMotorState(motorMode);
+}
+
 // -----------------
 
 void setupC()
 {
+  // Setup is identical for this excersize
   setupB();
 }
 
-void loopC()
+void calculateAndPrintRPM()
 {
-  loopB();
-
   int32_t position = encoder.read();
   unsigned long now = millis();
 
@@ -153,16 +162,24 @@ void loopC()
   if (timeDiff >= 1000)
   {
     int32_t posDiff = position - lastPosition;
-    float rotations = posDiff / (12.0 * 298.0);
-    float minutes = timeDiff / 1000.0 / 60.0;
+    float rotations = posDiff / COUNTS_PER_DEGREE / 360; // counts -> rotations
+    float minutes = timeDiff / 1000.0 / 60.0;            // ms -> mins
     float speed = -rotations / minutes;
 
+    // Reset counter vars
     lastPosition = position;
     lastTime = now;
 
     Serial.print(speed);
     Serial.println("rpm");
   }
+}
+
+void loopC()
+{
+  // Loop is also identical, we just add extra logic to measure motor speed
+  loopB();
+  calculateAndPrintRPM();
 }
 
 // -----------------
@@ -189,59 +206,8 @@ void loopD()
     }
   }
 
-  switch (motorMode)
-  {
-  case 'F':
-    analogWrite(MOTOR_A, motorDutyCycle);
-    analogWrite(MOTOR_B, 0);
-    break;
-
-  case 'B':
-    analogWrite(MOTOR_A, 0);
-    analogWrite(MOTOR_B, motorDutyCycle);
-    break;
-
-  case 'H':
-    analogWrite(MOTOR_A, 0);
-    analogWrite(MOTOR_B, 0);
-    break;
-
-  default:
-    break;
-  }
-
-  // read rpm back in
-  int32_t position = encoder.read();
-  unsigned long now = millis();
-
-  unsigned long timeDiff = now - lastTime;
-  if (timeDiff >= 1000)
-  {
-    int32_t posDiff = position - lastPosition;
-    float rotations = posDiff / (12.0 * 298.0);
-    float minutes = timeDiff / 1000.0 / 60.0;
-    float speed = -rotations / minutes;
-
-    lastPosition = position;
-    lastTime = now;
-
-    Serial.print(val / 1023.0 * 100.0);
-    Serial.print("% -> ");
-
-    Serial.print(speed);
-    Serial.print("rpm [");
-    if (motorMode == 'H')
-    {
-      Serial.print("OFF]");
-    }
-    else
-    {
-      Serial.print(speed < 0 ? "C" : "");
-      Serial.print("CW]");
-    }
-
-    Serial.println();
-  }
+  setMotorState(motorMode);
+  calculateAndPrintRPM();
 }
 
 // -----------------
@@ -254,7 +220,6 @@ void setupE()
   pinMode(MOTOR_A, OUTPUT);
   pinMode(MOTOR_B, OUTPUT);
 }
-
 
 void controlStrategy(float setpointCounts)
 {
@@ -293,6 +258,7 @@ void loopE()
   float setpointDegs = (val - 512) / 512.0 * 180;          // rescale into -180 to 180 degree range
   float setpointCounts = setpointDegs * COUNTS_PER_DEGREE; // Convert degrees into counts
 
+  // Execute the control strategy
   controlStrategy(setpointCounts);
 }
 
@@ -361,9 +327,12 @@ void loopServoStepTest(int totalTrials, bool randomRange)
   if (testTime > TRIAL_TIME) // Step 2s into each test
   {
     testStartMillis = millis();
-    if (randomRange) {
+    if (randomRange)
+    {
       setpoint = random(SETPOINT_A_COUNTS, SETPOINT_B_COUNTS);
-    } else {
+    }
+    else
+    {
       setpoint = setpoint == SETPOINT_A_COUNTS ? SETPOINT_B_COUNTS : SETPOINT_A_COUNTS;
     }
     numTests++;
