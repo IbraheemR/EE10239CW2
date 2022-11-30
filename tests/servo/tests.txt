@@ -1,2 +1,14 @@
 Test 1 - Initial test with 1 step change
-Test 2 - 100 step changes. Turns out that my jank P controller overshoots, but thats fine - it prioritises speed
+Test 2 - 100 step changes in interval 0 to 180. Turns out that my jank P controller overshoots, but thats fine - it prioritises speed
+Test 3 - As before, but with randomised setpoint changes in intervale -180 to 180.
+Test 4 -  A re-run of 2, but in max interval of -180 to 180
+Test 5 - A re-rin of 3, but with a longer time scale because some large rotations did not complete in the 2s window
+Test 6 - Random test, 100 trials, PI controller
+Test 7 - -180 to 180 sweep test, 100 trials, PI controller
+
+
+Analysis 1 - Analysis of Test 4
+Analysis 2 - Analysis of Test 5
+
+Analysis 3 - Analysis of Test 6
+Analysis 4 - Analysis of Test 7

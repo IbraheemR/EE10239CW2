@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <Encoder.h>
-#include <PID_v1.h>
 
 #define TRIMMER_PIN A0
 
@@ -19,12 +18,6 @@ unsigned long lastTime = 0;
 int32_t lastPosition = 0;
 
 int motorDutyCycle = 0;
-
-double pidInput = 0;
-double pidOutput = 0;
-double pidSetpoint = 0;
-
-PID pidController(&pidInput, &pidOutput, &pidSetpoint, 1, 1.7, 0, REVERSE);
 
 void setupA()
 {
@@ -239,20 +232,27 @@ void controlStrategy(float setpointCounts)
 {
   int32_t position = encoder.read();
 
+  int diff = position - setpointCounts;
 
-  pidSetpoint = setpointCounts;
-  pidInput = position;
+  float rampedDiff = 0;
 
-  pidController.Compute();
+  if (diff > DEAD_REGION || diff < -DEAD_REGION)
+  {
+    if (diff > RAMP_REGION)
+    {
+      rampedDiff = 255;
+    }
+    else if (diff < -RAMP_REGION)
+    {
+      rampedDiff = -255;
+    }
+    else
+    {
+      rampedDiff = diff / RAMP_REGION * 255;
+    }
+  }
 
-  int dutyCycle = pidOutput;
-
-  Serial.print("s:");
-  Serial.print(pidSetpoint);
-  Serial.print(",i:");
-  Serial.print(pidInput);
-  Serial.print(",o:");
-  Serial.println(pidOutput);
+  int dutyCycle = rampedDiff;
 
   analogWrite(MOTOR_A, max(-dutyCycle, 0));
   analogWrite(MOTOR_B, max(dutyCycle, 0));
@@ -380,9 +380,6 @@ void setup()
 
 void loop()
 {
-  pidController.SetMode(AUTOMATIC);
-  pidController.SetOutputLimits(-255, 255);
-
   if (hasProgram)
   {
     switch (program)
