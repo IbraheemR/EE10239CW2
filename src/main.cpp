@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <Encoder.h>
+#include <PID_v1.h>
 
 #define TRIMMER_PIN A0
 
@@ -18,6 +19,12 @@ unsigned long lastTime = 0;
 int32_t lastPosition = 0;
 
 int motorDutyCycle = 0;
+
+double pidInput = 0;
+double pidOutput = 0;
+double pidSetpoint = 0;
+
+PID pidController(&pidInput, &pidOutput, &pidSetpoint, 1, 1.7, 0, REVERSE);
 
 void setupA()
 {
@@ -225,34 +232,27 @@ void setupE()
 #define RAMP_REGION 30
 #define DEAD_REGION 1
 
-#define RAMP_COUNTS RAMP_REGION *COUNTS_PER_DEGREE
-#define DEAD_COUNTS DEAD_REGION *COUNTS_PER_DEGREE
+#define RAMP_COUNTS RAMP_REGION * COUNTS_PER_DEGREE
+#define DEAD_COUNTS DEAD_REGION * COUNTS_PER_DEGREE
 
 void controlStrategy(float setpointCounts)
 {
   int32_t position = encoder.read();
 
-  int diff = position - setpointCounts;
 
-  float rampedDiff = 0;
+  pidSetpoint = setpointCounts;
+  pidInput = position;
 
-  if (diff > DEAD_REGION || diff < -DEAD_REGION)
-  {
-    if (diff > RAMP_REGION)
-    {
-      rampedDiff = 255;
-    }
-    else if (diff < -RAMP_REGION)
-    {
-      rampedDiff = -255;
-    }
-    else
-    {
-      rampedDiff = diff / RAMP_REGION * 255;
-    }
-  }
+  pidController.Compute();
 
-  int dutyCycle = rampedDiff;
+  int dutyCycle = pidOutput;
+
+  Serial.print("s:");
+  Serial.print(pidSetpoint);
+  Serial.print(",i:");
+  Serial.print(pidInput);
+  Serial.print(",o:");
+  Serial.println(pidOutput);
 
   analogWrite(MOTOR_A, max(-dutyCycle, 0));
   analogWrite(MOTOR_B, max(dutyCycle, 0));
@@ -321,12 +321,12 @@ void loopSpeedTest()
 // ---------------------------------
 
 #define NUM_TRIALS 100
-#define TRIAL_TIME 2000
-#define SETPOINT_A 0
+#define TRIAL_TIME 3000
+#define SETPOINT_A -180
 #define SETPOINT_B 180
 
-#define SETPOINT_A_COUNTS SETPOINT_A *COUNTS_PER_DEGREE
-#define SETPOINT_B_COUNTS SETPOINT_B *COUNTS_PER_DEGREE
+#define SETPOINT_A_COUNTS SETPOINT_A * COUNTS_PER_DEGREE
+#define SETPOINT_B_COUNTS SETPOINT_B * COUNTS_PER_DEGREE
 
 float setpoint = SETPOINT_A_COUNTS;
 unsigned long testStartMillis;
@@ -338,18 +338,22 @@ void setupServoStepTest()
   testStartMillis = millis();
 }
 
-void loopServoStepTest(int totalTrials)
+void loopServoStepTest(int totalTrials, bool randomRange)
 {
   long testTime = millis() - testStartMillis;
 
   if (testTime > TRIAL_TIME) // Step 2s into each test
   {
     testStartMillis = millis();
-    setpoint = setpoint == SETPOINT_A_COUNTS ? SETPOINT_B_COUNTS : SETPOINT_A_COUNTS;
+    if (randomRange) {
+      setpoint = random(SETPOINT_A_COUNTS, SETPOINT_B_COUNTS);
+    } else {
+      setpoint = setpoint == SETPOINT_A_COUNTS ? SETPOINT_B_COUNTS : SETPOINT_A_COUNTS;
+    }
     numTests++;
   }
 
-  if (numTests > totalTrials * 2)
+  if (numTests > totalTrials)
   {
     Serial.print("DONE.");
     while (1)
@@ -376,6 +380,9 @@ void setup()
 
 void loop()
 {
+  pidController.SetMode(AUTOMATIC);
+  pidController.SetOutputLimits(-255, 255);
+
   if (hasProgram)
   {
     switch (program)
@@ -405,11 +412,15 @@ void loop()
       break;
 
     case '2':
-      loopServoStepTest(1);
+      loopServoStepTest(1, false);
       break;
 
     case '3':
-      loopServoStepTest(NUM_TRIALS);
+      loopServoStepTest(NUM_TRIALS, false);
+      break;
+
+    case '4':
+      loopServoStepTest(NUM_TRIALS, true);
       break;
 
     default:
@@ -460,6 +471,11 @@ void loop()
 
   case '3':
     Serial.println("Program: Servo Step Response Test (" + String(NUM_TRIALS) + " Trials):");
+    setupServoStepTest();
+    break;
+
+  case '4':
+    Serial.println("Program: Servo Step Response Test (Random, " + String(NUM_TRIALS) + " Trials):");
     setupServoStepTest();
     break;
 
