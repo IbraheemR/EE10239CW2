@@ -6,18 +6,53 @@
 #define MOTOR_A 5
 #define MOTOR_B 6
 
-#define MOTOR_SENSE_A 2
-#define MOTOR_SENSE_B 3
+// Interrupts set on pins 2 & 3 have the highest frequency and thus accuracy 
+#define ENCODER_A 2
+#define ENCODER_B 3
 
-char program;
+// Tracks which program is selected on startup
+char programSelect;
 bool hasProgram = false;
 
-Encoder encoder(MOTOR_SENSE_A, MOTOR_SENSE_B);
+Encoder encoder(ENCODER_A, ENCODER_B);
 
+// Misc. timing vars
 unsigned long lastTime = 0;
 int32_t lastPosition = 0;
 
+// Control var for speed control
 int motorDutyCycle = 0;
+
+// Config for servo controller
+
+#define COUNTS_PER_DEGREE 12.0 * 298.0 / 360.0
+// Ramp the motor voltage in region ±30 deg around setpoint
+#define RAMP_REGION 30
+#define DEAD_REGION 1
+
+#define RAMP_COUNTS RAMP_REGION * COUNTS_PER_DEGREE
+#define DEAD_COUNTS DEAD_REGION * COUNTS_PER_DEGREE
+
+// Config for secret test modes
+
+#define NUM_TRIALS 100
+#define TRIAL_TIME 3000
+#define SETPOINT_A -180
+#define SETPOINT_B 180
+
+#define SETPOINT_A_COUNTS SETPOINT_A * COUNTS_PER_DEGREE
+#define SETPOINT_B_COUNTS SETPOINT_B * COUNTS_PER_DEGREE
+
+float setpoint = SETPOINT_A_COUNTS;
+unsigned long testStartMillis;
+int numTests = 0;
+
+
+//
+// Based on the users input, we delegate on one of these setup & loop methods.
+//
+
+// ----------------
 
 void setupA()
 {
@@ -220,13 +255,6 @@ void setupE()
   pinMode(MOTOR_B, OUTPUT);
 }
 
-#define COUNTS_PER_DEGREE 12.0 * 298.0 / 360.0
-// Ramp the motor voltage in region ±30 deg around setpoint
-#define RAMP_REGION 30
-#define DEAD_REGION 1
-
-#define RAMP_COUNTS RAMP_REGION * COUNTS_PER_DEGREE
-#define DEAD_COUNTS DEAD_REGION * COUNTS_PER_DEGREE
 
 void controlStrategy(float setpointCounts)
 {
@@ -320,18 +348,6 @@ void loopSpeedTest()
 
 // ---------------------------------
 
-#define NUM_TRIALS 100
-#define TRIAL_TIME 3000
-#define SETPOINT_A -180
-#define SETPOINT_B 180
-
-#define SETPOINT_A_COUNTS SETPOINT_A * COUNTS_PER_DEGREE
-#define SETPOINT_B_COUNTS SETPOINT_B * COUNTS_PER_DEGREE
-
-float setpoint = SETPOINT_A_COUNTS;
-unsigned long testStartMillis;
-int numTests = 0;
-
 void setupServoStepTest()
 {
   setupE();
@@ -382,7 +398,7 @@ void loop()
 {
   if (hasProgram)
   {
-    switch (program)
+    switch (programSelect)
     {
     case 'A':
       loopA();
@@ -426,10 +442,10 @@ void loop()
     return;
   }
 
-  program = toupper(Serial.read());
+  programSelect = toupper(Serial.read());
 
   hasProgram = true;
-  switch (program)
+  switch (programSelect)
   {
   case 'A':
     Serial.println("Progam A:");
