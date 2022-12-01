@@ -82,26 +82,23 @@ void setupB()
   Serial.println("Press F for FORWARD, B for BACKWARDS or H for HALT");
 }
 
-void setMotorState(char motorMode)
+void setMotorState(char motorMode, int speed)
 {
   switch (motorMode)
   {
   case 'F':
-    digitalWrite(MOTOR_A, HIGH);
-    digitalWrite(MOTOR_B, LOW);
-    Serial.println("FORWARDS");
+    analogWrite(MOTOR_A, speed);
+    analogWrite(MOTOR_B, 0);
     break;
 
   case 'B':
-    digitalWrite(MOTOR_A, LOW);
-    digitalWrite(MOTOR_B, HIGH);
-    Serial.println("BACKWARDS");
+    analogWrite(MOTOR_A, 0);
+    analogWrite(MOTOR_B, speed);
     break;
 
   case 'H':
-    digitalWrite(MOTOR_A, LOW);
-    digitalWrite(MOTOR_B, LOW);
-    Serial.println("HALT");
+    analogWrite(MOTOR_A, 0);
+    analogWrite(MOTOR_B, 0);
     break;
 
   default:
@@ -112,6 +109,85 @@ void setMotorState(char motorMode)
 char motorMode = 'H';
 
 void loopB()
+{
+  
+  if (Serial.available())
+  {
+    char c = Serial.read();
+    c = toupper(c);
+    // Check if it's a valid mode
+    if (c == 'F' || c == 'B' || c == 'H')
+    {
+      motorMode = c;
+      // Print the selected mode
+      switch (motorMode)
+      {
+      case 'F':
+        Serial.println("FORWARDS");
+        break;
+
+      case 'B':
+        Serial.println("BACKWARDS");
+        break;
+
+      case 'H':
+        Serial.println("HALT");
+        break;
+
+      default:
+        break;
+      }
+    }
+  }
+
+  setMotorState(motorMode, 255);
+}
+
+// -----------------
+
+void setupC()
+{
+  // Setup is identical for this excersize
+  setupB();
+}
+
+void calculateAndPrintRPM()
+{
+  int32_t position = encoder.read();
+  unsigned long now = millis();
+
+  unsigned long timeDiff = now - lastTime;
+  if (timeDiff >= 1000)
+  {
+    int32_t posDiff = position - lastPosition;
+    float rotations = posDiff / COUNTS_PER_DEGREE / 360; // counts -> rotations
+    float minutes = timeDiff / 1000.0 / 60.0;            // ms -> mins
+    float speed = rotations / minutes;
+
+    // Reset counter vars
+    lastPosition = position;
+    lastTime = now;
+
+    Serial.print(speed);
+    Serial.println("rpm");
+  }
+}
+
+void loopC()
+{
+  // Loop is also identical, we just add extra logic to measure motor speed
+  loopB();
+  calculateAndPrintRPM();
+}
+
+// -----------------
+
+void setupD()
+{
+  setupB();
+}
+
+void loopD()
 {
   if (Serial.available())
   {
@@ -142,71 +218,11 @@ void loopB()
     }
   }
 
-  setMotorState(motorMode);
-}
-
-// -----------------
-
-void setupC()
-{
-  // Setup is identical for this excersize
-  setupB();
-}
-
-void calculateAndPrintRPM()
-{
-  int32_t position = encoder.read();
-  unsigned long now = millis();
-
-  unsigned long timeDiff = now - lastTime;
-  if (timeDiff >= 1000)
-  {
-    int32_t posDiff = position - lastPosition;
-    float rotations = posDiff / COUNTS_PER_DEGREE / 360; // counts -> rotations
-    float minutes = timeDiff / 1000.0 / 60.0;            // ms -> mins
-    float speed = -rotations / minutes;
-
-    // Reset counter vars
-    lastPosition = position;
-    lastTime = now;
-
-    Serial.print(speed);
-    Serial.println("rpm");
-  }
-}
-
-void loopC()
-{
-  // Loop is also identical, we just add extra logic to measure motor speed
-  loopB();
-  calculateAndPrintRPM();
-}
-
-// -----------------
-
-void setupD()
-{
-  setupB();
-}
-
-void loopD()
-{
   // # Read trimmer value
   int val = analogRead(TRIMMER_PIN);
   motorDutyCycle = val / 4; // Map max 1023 to max 255
 
-  // set motor speed to trimmer value
-  if (Serial.available())
-  {
-    char c = Serial.read();
-    c = toupper(c);
-    if (c == 'F' || c == 'B' || c == 'H')
-    {
-      motorMode = c;
-    }
-  }
-
-  setMotorState(motorMode);
+  setMotorState(motorMode, motorDutyCycle);
   calculateAndPrintRPM();
 }
 
