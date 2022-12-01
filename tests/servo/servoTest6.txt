@@ -1,3 +1,4 @@
+timeRaw,setpointRaw,encoderRaw
 t=2867,setpoint=-1788.00,pos=0
 t=2870,setpoint=-1788.00,pos=-1
 t=2872,setpoint=-1788.00,pos=-2
