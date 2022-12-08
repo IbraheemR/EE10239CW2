@@ -43,7 +43,7 @@ int motorDutyCycle = 0;
 #define SETPOINT_A_COUNTS SETPOINT_A *COUNTS_PER_DEGREE
 #define SETPOINT_B_COUNTS SETPOINT_B *COUNTS_PER_DEGREE
 
-float setpoint = SETPOINT_A_COUNTS;
+double setpoint = SETPOINT_A_COUNTS;
 unsigned long testStartMillis;
 int numTests = 0;
 
@@ -62,8 +62,8 @@ void loopA()
 {
   int val = analogRead(TRIMMER_PIN);
 
-  float percentage = val / 1023.0 * 100.0; // Resale 0 to 1023 range to 0 to 100%
-  float voltage = val / 1023.0 * 5.0;      // Resale 0 to 1023 range to 0 to 5V
+  double percentage = val / 1023.0 * 100.0; // Resale 0 to 1023 range to 0 to 100%
+  double voltage = val / 1023.0 * 5.0;      // Resale 0 to 1023 range to 0 to 5V
 
   Serial.print(percentage);
   Serial.print("% = ");
@@ -110,7 +110,7 @@ char motorMode = 'H';
 
 void loopB()
 {
-  
+
   if (Serial.available())
   {
     char c = Serial.read();
@@ -160,9 +160,9 @@ void calculateAndPrintRPM()
   if (timeDiff >= 1000)
   {
     int32_t posDiff = position - lastPosition;
-    float rotations = posDiff / COUNTS_PER_DEGREE / 360; // counts -> rotations
-    float minutes = timeDiff / 1000.0 / 60.0;            // ms -> mins
-    float speed = rotations / minutes;
+    double rotations = posDiff / COUNTS_PER_DEGREE / 360; // counts -> rotations
+    double minutes = timeDiff / 1000.0 / 60.0;            // ms -> mins
+    double speed = rotations / minutes;
 
     // Reset counter vars
     lastPosition = position;
@@ -237,27 +237,28 @@ void setupE()
   pinMode(MOTOR_B, OUTPUT);
 }
 
-void controlStrategy(float setpointCounts)
+int controlStrategy(double setpointCounts)
 {
   int32_t position = encoder.read();
 
-  int diff = position - setpointCounts;
+  int error = position - setpointCounts;
 
-  float rampedDiff = 0;
 
-  if (diff > DEAD_REGION || diff < -DEAD_REGION)
+  double rampedDiff = 0;
+
+  if (error > DEAD_REGION || error < -DEAD_REGION)
   {
-    if (diff > RAMP_REGION)
+    if (error > RAMP_REGION)
     {
       rampedDiff = 255;
     }
-    else if (diff < -RAMP_REGION)
+    else if (error < -RAMP_REGION)
     {
       rampedDiff = -255;
     }
     else
     {
-      rampedDiff = diff / RAMP_REGION * 255;
+      rampedDiff = error / RAMP_REGION * 255;
     }
   }
 
@@ -265,17 +266,50 @@ void controlStrategy(float setpointCounts)
 
   analogWrite(MOTOR_A, max(-dutyCycle, 0));
   analogWrite(MOTOR_B, max(dutyCycle, 0));
+
+  return dutyCycle;
 }
 
 void loopE()
 {
   // Determine the setpoint from the trimmer.
   int val = analogRead(TRIMMER_PIN);
-  float setpointDegs = (val - 512) / 512.0 * 180;          // rescale into -180 to 180 degree range
-  float setpointCounts = setpointDegs * COUNTS_PER_DEGREE; // Convert degrees into counts
+  double setpointDegs = (val - 512) / 512.0 * 180;          // rescale into -180 to 180 degree range
+  double setpointCounts = setpointDegs * COUNTS_PER_DEGREE; // Convert degrees into counts
 
-  // Execute the control strategy
-  controlStrategy(setpointCounts);
+    // Execute the control strategy
+  int pwm = controlStrategy(setpointCounts);
+
+  // -------------------------
+  // Print values
+
+  int32_t position = encoder.read();
+  unsigned long now = millis();
+
+  unsigned long timeDiff = now - lastTime;
+  if (timeDiff >= 1000)
+  {
+    int32_t posDiff = position - lastPosition;
+    double rotations = posDiff / COUNTS_PER_DEGREE / 360; // counts -> rotations
+    double minutes = timeDiff / 1000.0 / 60.0;            // ms -> mins
+    double speed = rotations / minutes;
+
+    // Reset counter vars
+    lastPosition = position;
+    lastTime = now;
+
+    Serial.print("rpm=");
+    Serial.print(speed);
+    Serial.print(" pos=");
+    Serial.print(position / COUNTS_PER_DEGREE * 1.46);
+    Serial.print("deg trimmer=");
+    Serial.print(val/1023.0 * 100.0);
+    Serial.print("% PWM=");
+    Serial.print(pwm/255.0 * 100.0);
+    Serial.println("%");
+  }
+
+
 }
 
 // ---------------------------------
